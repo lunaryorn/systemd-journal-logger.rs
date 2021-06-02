@@ -32,6 +32,14 @@
 //! # }
 //! ```
 //!
+//! In a service you can use [`connected_to_journal`] to check whether
+//! the standard output or error stream of the current process is directly
+//! connected to the systemd journal (the default for services started by
+//! systemd) and fall back to logging to standard error if that's not the
+//! case.  Take a look at the [systemd_service.rs] example for details.
+//!
+//! [systemd_service.rs]: https://github.com/lunaryorn/systemd-journal-logger.rs/blob/main/examples/systemd_service.rs
+//!
 //! # Journal fields
 //!
 //! The journald logger always sets the following standard [journal fields][2]:
@@ -54,7 +62,7 @@
 //! use log::{info, warn, error, LevelFilter};
 //!
 //! # fn main(){
-//! systemd_journal_logger::init_with_extra_fields(vec![("VERSION", "0.0.1")]).unwrap();
+//! systemd_journal_logger::init_with_extra_fields(vec![("VERSION", env!("CARGO_PKG_VERSION"))]).unwrap();
 //! log::set_max_level(LevelFilter::Info);
 //!
 //! info!("this message has an extra VERSION field in the journal");
@@ -90,7 +98,10 @@
 //! [`journal_send`] which sends a single log record to the journal.
 
 use std::borrow::Cow;
+use std::os::unix::io::{AsRawFd, RawFd};
+use std::str::FromStr;
 
+use libc::{dev_t, ino_t};
 use libsystemd::errors::SdError;
 use libsystemd::logging::Priority;
 use log::{Level, Log, Metadata, Record, SetLoggerError};
@@ -243,6 +254,41 @@ where
 pub static LOG: JournalLog<&'static str, &'static str> = JournalLog {
     extra_fields: vec![],
 };
+
+fn fd_has_device_and_inode(fd: RawFd, device: dev_t, inode: ino_t) -> bool {
+    nix::sys::stat::fstat(fd).map_or(false, |stat| stat.st_dev == device && stat.st_ino == inode)
+}
+
+/// Whether this process is directly connected to the journal.
+///
+/// Inspects the `$JOURNAL_STREAM` environment variable and compares the device and inode
+/// numbers in this variable against the stdout and stderr file descriptors.
+///
+/// Return `true` if either stream matches the device and inode numbers in `$JOURNAL_STREAM`,
+/// and `false` otherwise (or in case of any IO error).
+///
+/// Systemd sets `$JOURNAL_STREAM` to the device and inode numbers of the standard output
+/// or standard error streams of the current process if either of these streams is connected
+/// to the systemd journal.
+///
+/// Systemd explicitly recommends that services check this variable to upgrade their logging
+/// to the native systemd journal protocol.
+///
+/// See section “Environment Variables Set or Propagated by the Service Manager” in
+/// [systemd.exec(5)][1] for more information.
+///
+/// [1]: https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Environment%20Variables%20Set%20or%20Propagated%20by%20the%20Service%20Manager
+pub fn connected_to_journal() -> bool {
+    std::env::var_os("JOURNAL_STREAM")
+        .as_ref()
+        .and_then(|value| value.to_str())
+        .and_then(|value| value.split_once(':'))
+        .and_then(|(device, inode)| u64::from_str(device).ok().zip(u64::from_str(inode).ok()))
+        .map_or(false, |(device, inode)| {
+            fd_has_device_and_inode(std::io::stderr().as_raw_fd(), device, inode)
+                || fd_has_device_and_inode(std::io::stdout().as_raw_fd(), device, inode)
+        })
+}
 
 /// Initialize journal logging.
 ///

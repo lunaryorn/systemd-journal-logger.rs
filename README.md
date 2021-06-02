@@ -42,6 +42,8 @@ fn main() {
 
 These extra fields appear in the output of `journalctl --output=verbose` or in any of the JSON output formats of `journalctl`.
 
+See [systemd_service.rs](./examples/systemd_service.rs) for a simple example of logging in a systemd service which automatically falls back to a different logger if not started through systemd.
+
 ## Related projects
 
 - [rust-systemd](https://github.com/jmesmon/rust-systemd) provides a [logger implementation][1] based on the `libsystemd` C library.

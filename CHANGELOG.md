@@ -14,11 +14,13 @@ Run [`cargo-release`][cr] to publish a release.
 ### Added
 - Add `JournalLog::with_extra_fields` and `init_with_extra_fields` to add custom fields to every log entry (see [GH-3]).
 - Add new `journal_send` to send an individual log record directly to the systemd journal.
+- Add new `connected_to_journal` function to check for a direct connection to the systemd log in order to automatically upgrade to journal logging in systemd services (see [GH-5]).
 
 ### Changed
 - Do not silently ignore journal errors; instead panic if the logger fails to send a message to the systemd journal.
 
 [GH-3]: https://github.com/lunaryorn/systemd-journal-logger.rs/pull/3
+[GH-5]: https://github.com/lunaryorn/systemd-journal-logger.rs/pull/5
 
 ## [0.2.0] – 2021-06-01
 

@@ -21,7 +21,7 @@ fn init() {
 
     info!(target: &target, "Hello World");
 
-    let entries = journal::read(module_path!(), &target);
+    let entries = journal::read_current_process(module_path!(), &target);
     assert_eq!(entries.len(), 1);
 
     assert_eq!(entries[0]["TARGET"], target);

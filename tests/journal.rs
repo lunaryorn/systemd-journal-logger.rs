@@ -13,7 +13,13 @@ use std::process::Command;
 
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use std::ffi::OsStr;
 
+/// Generate a random TARGET name with the given `prefix`.
+///
+/// This allows to identify journal entries uniquely using the
+/// `target` log property and the TARGET journal field.
+#[allow(dead_code)]
 pub fn random_target(prefix: &str) -> String {
     format!(
         "{}-{}",
@@ -26,14 +32,30 @@ pub fn random_target(prefix: &str) -> String {
     )
 }
 
-pub fn read(module: &str, target: &str) -> Vec<HashMap<String, String>> {
+#[derive(Debug, Copy, Clone)]
+#[allow(dead_code)]
+pub enum Journal {
+    User,
+    System,
+}
+
+/// Read from journal.
+///
+/// `args` contains additional journalctl arguments such as filters.
+pub fn read<I, S>(journal: Journal, args: I) -> Vec<HashMap<String, String>>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut command = Command::new("journalctl");
+    if matches!(journal, Journal::User) {
+        command.arg("--user");
+    }
+
     let stdout = String::from_utf8(
-        Command::new("journalctl")
-            .args(&["--user", "--output=json"])
-            // Filter by the PID of the current test process and the module path
-            .arg(format!("_PID={}", std::process::id()))
-            .arg(format!("MODULE_PATH={}", module))
-            .arg(format!("TARGET={}", target))
+        command
+            .arg("--output=json")
+            .args(args)
             .output()
             .unwrap()
             .stdout,
@@ -44,4 +66,18 @@ pub fn read(module: &str, target: &str) -> Vec<HashMap<String, String>> {
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect()
+}
+
+// Read from the journal of the current process.
+#[allow(dead_code)]
+pub fn read_current_process(module: &str, target: &str) -> Vec<HashMap<String, String>> {
+    // Filter by the PID of the current test process and the module path
+    read(
+        Journal::User,
+        vec![
+            format!("_PID={}", std::process::id()),
+            format!("MODULE_PATH={}", module),
+            format!("TARGET={}", target),
+        ],
+    )
 }

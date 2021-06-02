@@ -18,11 +18,18 @@ edition = "2018"
 # feature unconditionally
 log = { version = "^0.4", features = ["std"] }
 libsystemd = "^0.3"
+nix = "^0.21"
+libc = "^0.2"
 
 [dev-dependencies]
 pretty_assertions = "^0.7"
 serde_json = "^1"
 rand = "^0.8"
+simple_logger = "^1.11"
+
+[[test]]
+name = "journal_stream"
+harness = false
 
 [package.metadata.release]
 pre-release-commit-message = "Release {{version}}"

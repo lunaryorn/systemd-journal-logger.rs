@@ -33,7 +33,7 @@ fn simple_log_entry() {
             .build(),
     );
 
-    let entries = journal::read(module_path!(), &target);
+    let entries = journal::read_current_process(module_path!(), &target);
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
 
@@ -79,7 +79,7 @@ fn multiline_message() {
             .build(),
     );
 
-    let entries = journal::read(module_path!(), &target);
+    let entries = journal::read_current_process(module_path!(), &target);
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
 
@@ -107,7 +107,7 @@ fn extra_fields() {
             .build(),
     );
 
-    let entries = journal::read(module_path!(), &target);
+    let entries = journal::read_current_process(module_path!(), &target);
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
 
