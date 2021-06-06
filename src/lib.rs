@@ -56,7 +56,11 @@
 //! - `TARGET`: The target of the log record (see [`log::Record::target()`]).
 //! - `CODE_MODULE`: The module path of the log record (see [`log::Record::module_path()`], only if present).
 //!
-//! You can add custom fields to every log entry with [`JournalLog::with_extra_fields`] and [`init_with_extra_fields`]:
+//! In addition to these fields the logger also adds all structures key-values (see [`log::Record::key_values`])
+//! from each log record as journal fields, after converting the keys to uppercase letters and replacing invalid
+//! characters with underscores.
+//!
+//! You can also add custom fields to every log entry with [`JournalLog::with_extra_fields`] and [`init_with_extra_fields`]:
 //!
 //! ```edition2018
 //! use log::{info, warn, error, LevelFilter};
@@ -69,7 +73,7 @@
 //! # }
 //! ```
 //!
-//! You can display extra fields with `journalctl --output=verbose` and extract them with any of the structured
+//! You can display these extra fields with `journalctl --output=verbose` and extract them with any of the structured
 //! output formats of `journalctl`, e.g. `journalctl --output=json`.
 //!
 //! [2]: https://www.freedesktop.org/software/systemd/man/systemd.journal-fields.html
@@ -104,6 +108,7 @@ use std::str::FromStr;
 use libc::{dev_t, ino_t};
 use libsystemd::errors::SdError;
 use libsystemd::logging::Priority;
+use log::kv::{Error, Key, Value, Visitor};
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 
 /// A systemd journal logger.
@@ -193,6 +198,15 @@ pub fn escape_journal_key(key: &str) -> Cow<str> {
     }
 }
 
+struct CollectKeyValues<'a, 'kvs>(&'a mut Vec<(Key<'kvs>, Value<'kvs>)>);
+
+impl<'a, 'kvs> Visitor<'kvs> for CollectKeyValues<'a, 'kvs> {
+    fn visit_pair(&mut self, key: Key<'kvs>, value: Value<'kvs>) -> Result<(), Error> {
+        self.0.push((key, value));
+        Ok(())
+    }
+}
+
 /// Send a single log record to the journal.
 ///
 /// Extract the standard fields from `record` (see [`crate`] documentation),
@@ -207,12 +221,23 @@ where
     K: AsRef<str> + 'a,
     V: AsRef<str> + 'a,
 {
+    let mut record_fields = Vec::with_capacity(record.key_values().count());
+    // Our visitor nevers fails so we can safely unwrap here
+    record
+        .key_values()
+        .visit(&mut CollectKeyValues(&mut record_fields))
+        .unwrap();
     libsystemd::logging::journal_send(
         level_to_priority(record.level()),
         &format!("{}", record.args()),
-        standard_fields(record).into_iter().chain(
-            extra_fields.map(|(k, v)| (escape_journal_key(k.as_ref()), Cow::Borrowed(v.as_ref()))),
-        ),
+        standard_fields(record)
+            .into_iter()
+            .chain(extra_fields.map(|(k, v)| (escape_journal_key(k.as_ref()), v.as_ref().into())))
+            .chain(
+                record_fields
+                    .iter()
+                    .map(|(k, v)| (escape_journal_key(k.as_ref()), format!("{}", v).into())),
+            ),
     )
 }
 

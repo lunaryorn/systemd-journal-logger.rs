@@ -15,8 +15,9 @@ edition = "2018"
 
 [dependencies]
 # libsystemd isn't no_std compatible so we can conveniently enable log's std
-# feature unconditionally
-log = { version = "^0.4", features = ["std"] }
+# feature unconditionally.  We require std for the set_boxed_logger field in
+# init_with_extra_fields.
+log = { version = "^0.4", features = ["std", "kv_unstable"] }
 libsystemd = "^0.3"
 nix = "^0.21"
 libc = "^0.2"
