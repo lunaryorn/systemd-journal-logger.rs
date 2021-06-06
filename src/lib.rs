@@ -91,12 +91,9 @@
 //! # Errors
 //!
 //! This crate currently does not implement any kind of error handling for journal messages.
-//!
 //! In particular it will **panic** when sending a record to journald fails, e.g. if journald is
-//! not running.
-//!
-//! Given that journald on systemd systems is pretty essential and very reliable there are currently
-//! no plans to change this behaviour.
+//! not running.  There are no plans to change this behaviour, give that journald is reliable in
+//! general.
 //!
 //! To implement an alternative error handling behaviour define a custom log implementation around
 //! [`journal_send`] which sends a single log record to the journal.
