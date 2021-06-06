@@ -132,7 +132,7 @@ fn level_to_priority(level: Level) -> Priority {
 /// - the standard `CODE_FILE` and `CODE_LINE` fields to the file and line of `record`,
 /// - the custom `TARGET` field to `record.target`, and
 /// - the custom `CODE_MODULE` to the module path of `record`.
-fn standard_fields<'a>(record: &'a Record) -> Vec<(&'static str, Cow<'a, str>)> {
+fn standard_fields<'a>(record: &'a Record) -> Vec<(Cow<'a, str>, Cow<'a, str>)> {
     let mut fields = Vec::with_capacity(6);
 
     if let Some(short_name) = std::env::current_exe()
@@ -141,22 +141,56 @@ fn standard_fields<'a>(record: &'a Record) -> Vec<(&'static str, Cow<'a, str>)> 
         .and_then(|p| p.file_name())
         .map(|n| n.to_string_lossy().into_owned())
     {
-        fields.push(("SYSLOG_IDENTIFIER", short_name.into()));
+        fields.push(("SYSLOG_IDENTIFIER".into(), short_name.into()));
     }
-    fields.push(("SYSLOG_PID", std::process::id().to_string().into()));
+    fields.push(("SYSLOG_PID".into(), std::process::id().to_string().into()));
 
     if let Some(file) = record.file() {
-        fields.push(("CODE_FILE", file.into()));
+        fields.push(("CODE_FILE".into(), file.into()));
     }
     if let Some(line) = record.line().map(|l| l.to_string()) {
-        fields.push(("CODE_LINE", line.into()));
+        fields.push(("CODE_LINE".into(), line.into()));
     }
     // Non-standard fields
-    fields.push(("TARGET", record.target().into()));
+    fields.push(("TARGET".into(), record.target().into()));
     if let Some(module) = record.module_path() {
-        fields.push(("CODE_MODULE", module.into()))
+        fields.push(("CODE_MODULE".into(), module.into()))
     }
     fields
+}
+
+/// Whether `c` is a valid character in the key of a journal field.
+///
+/// Journal field keys may only contain ASCII uppercase letters A to Z,
+/// numbers 0 to 9 and the underscore.
+pub fn is_valid_key_char(c: char) -> bool {
+    matches!(c, 'A'..='Z' | '0'..='9' | '_')
+}
+
+/// Escape a `key` for use in a systemd journal field.
+///
+/// Journal keys must only contain ASCII uppercase letters, numbers and
+/// the underscore, and the must not start with an underscore.
+///
+/// If all characters in `key` are valid (see [`is_valid_key_char`])
+/// return `key`, otherwise transform `key` to a ASCII uppercase, and
+/// replace all invalid characters with an underscore.
+///
+/// If the resulting value starts with an underscore prepend the
+/// prefix "UNDERSCORE" to the result.
+pub fn escape_journal_key(key: &str) -> Cow<str> {
+    if key.chars().all(is_valid_key_char) {
+        Cow::Borrowed(key)
+    } else {
+        let escaped = key
+            .to_ascii_uppercase()
+            .replace(|c| !is_valid_key_char(c), "_");
+        if escaped.starts_with('_') {
+            format!("UNDERSCORE{}", escaped).into()
+        } else {
+            escaped.into()
+        }
+    }
 }
 
 /// Send a single log record to the journal.
@@ -176,9 +210,9 @@ where
     libsystemd::logging::journal_send(
         level_to_priority(record.level()),
         &format!("{}", record.args()),
-        standard_fields(record)
-            .into_iter()
-            .chain(extra_fields.map(|(k, v)| (k.as_ref(), Cow::Borrowed(v.as_ref())))),
+        standard_fields(record).into_iter().chain(
+            extra_fields.map(|(k, v)| (escape_journal_key(k.as_ref()), Cow::Borrowed(v.as_ref()))),
+        ),
     )
 }
 
@@ -201,6 +235,10 @@ where
     /// contain only uppercase alphanumeric characters and the underscore, and
     /// it must not start with an underscore.
     ///
+    /// Invalid keys in `extra_fields` are escaped with [`escape_journal_key`],
+    /// which transforms them to ASCII uppercase and replaces all invalid
+    /// characters with underscores.
+    ///
     /// `extra_fields` should **not** contain any of the journal fields already
     /// added by this logger; while journald supports multiple values for a field
     /// journald clients may not handle unexpected multi-value fields properly and
@@ -209,9 +247,6 @@ where
     ///
     /// See the [`crate`] documentation at [`crate`] for details about the standard
     /// journal fields this logger uses.
-    ///
-    /// Invalid fields are **silently discarded** currently; this may change in a later
-    /// version.
     ///
     /// ## Restrictions on values
     ///
@@ -360,6 +395,41 @@ mod tests {
     }
 
     #[test]
+    fn is_valid_key_char() {
+        for c in 'A'..='Z' {
+            assert!(super::is_valid_key_char(c));
+        }
+        for c in '0'..='9' {
+            assert!(super::is_valid_key_char(c));
+        }
+        assert!(super::is_valid_key_char('_'));
+
+        for c in 'a'..='z' {
+            assert!(!super::is_valid_key_char(c));
+        }
+        assert!(!super::is_valid_key_char('ö'));
+        assert!(!super::is_valid_key_char('ß'));
+    }
+
+    #[test]
+    fn escape_journal_key() {
+        for case in &["FOO", "123_FOO_BAR", "123"] {
+            assert_eq!(super::escape_journal_key(case), *case);
+            assert!(matches!(super::escape_journal_key(case), Cow::Borrowed(_)));
+        }
+
+        let cases = vec![
+            ("foo", "FOO"),
+            ("_foo", "UNDERSCORE_FOO"),
+            ("Hallöchen", "HALL_CHEN"),
+            ("öß", "UNDERSCORE__"),
+        ];
+        for (key, expected) in cases {
+            assert_eq!(super::escape_journal_key(key), expected);
+        }
+    }
+
+    #[test]
     fn standard_fields() {
         let record = Record::builder()
             .level(Level::Warn)
@@ -383,11 +453,11 @@ mod tests {
         assert_eq!(
             fields[2..],
             vec![
-                ("CODE_FILE", Cow::Borrowed("foo.rs")),
-                ("CODE_LINE", Cow::Borrowed("10")),
-                ("TARGET", Cow::Borrowed("testlog")),
+                (Cow::Borrowed("CODE_FILE"), Cow::Borrowed("foo.rs")),
+                (Cow::Borrowed("CODE_LINE"), Cow::Borrowed("10")),
+                (Cow::Borrowed("TARGET"), Cow::Borrowed("testlog")),
                 (
-                    "CODE_MODULE",
+                    Cow::Borrowed("CODE_MODULE"),
                     Cow::Borrowed("systemd_journal_logger::tests")
                 )
             ]

@@ -96,7 +96,7 @@ fn multiline_message() {
 
 #[test]
 fn extra_fields() {
-    let target = journal::random_target("systemd_journal_logger/log_extra_field");
+    let target = journal::random_target("systemd_journal_logger/extra_fields");
 
     JournalLog::with_extra_fields(vec![("FOO", "BAR")]).log(
         &Record::builder()
@@ -118,4 +118,30 @@ fn extra_fields() {
     );
     assert_eq!(entry["MESSAGE"], "with an extra field");
     assert_eq!(entry["FOO"], "BAR")
+}
+
+#[test]
+fn escaped_extra_fields() {
+    let target = journal::random_target("systemd_journal_logger/escaped_extra_fields");
+
+    JournalLog::with_extra_fields(vec![("Hallöchen", "Welt")]).log(
+        &Record::builder()
+            .level(Level::Debug)
+            .target(&target)
+            .module_path(Some(module_path!()))
+            .args(format_args!("with an escaped extra field"))
+            .build(),
+    );
+
+    let entries = journal::read_current_process(module_path!(), &target);
+    assert_eq!(entries.len(), 1);
+    let entry = &entries[0];
+
+    assert_eq!(entry["TARGET"], target);
+    assert_eq!(
+        entry["PRIORITY"],
+        u8::from(libsystemd::logging::Priority::Info).to_string()
+    );
+    assert_eq!(entry["MESSAGE"], "with an escaped extra field");
+    assert_eq!(entry["HALL_CHEN"], "Welt")
 }
