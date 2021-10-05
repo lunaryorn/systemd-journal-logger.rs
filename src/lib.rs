@@ -348,7 +348,7 @@ pub fn connected_to_journal() -> bool {
         .as_ref()
         .and_then(|value| value.to_str())
         .and_then(|value| value.split_once(':'))
-        .and_then(|(device, inode)| u64::from_str(device).ok().zip(u64::from_str(inode).ok()))
+        .and_then(|(device, inode)| dev_t::from_str(device).ok().zip(ino_t::from_str(inode).ok()))
         .map_or(false, |(device, inode)| {
             fd_has_device_and_inode(std::io::stderr().as_raw_fd(), device, inode)
                 || fd_has_device_and_inode(std::io::stdout().as_raw_fd(), device, inode)
