@@ -99,15 +99,14 @@
 //! [`journal_send`] which sends a single log record to the journal.
 
 use std::borrow::Cow;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::str::FromStr;
 
-use libc::{dev_t, ino_t};
 use libsystemd::errors::SdError;
 use libsystemd::logging::Priority;
 use log::kv::{Error, Key, Value, Visitor};
 use log::{Level, Log, Metadata, Record, SetLoggerError};
 use std::cmp::min;
+
+pub use libsystemd::logging::connected_to_journal;
 
 /// A systemd journal logger.
 pub struct JournalLog<K, V> {
@@ -319,45 +318,6 @@ where
 pub static LOG: JournalLog<&'static str, &'static str> = JournalLog {
     extra_fields: vec![],
 };
-
-fn fd_has_device_and_inode(fd: RawFd, device: dev_t, inode: ino_t) -> bool {
-    nix::sys::stat::fstat(fd).map_or(false, |stat| stat.st_dev == device && stat.st_ino == inode)
-}
-
-/// Whether this process is directly connected to the journal.
-///
-/// Inspects the `$JOURNAL_STREAM` environment variable and compares the device and inode
-/// numbers in this variable against the stdout and stderr file descriptors.
-///
-/// Return `true` if either stream matches the device and inode numbers in `$JOURNAL_STREAM`,
-/// and `false` otherwise (or in case of any IO error).
-///
-/// Systemd sets `$JOURNAL_STREAM` to the device and inode numbers of the standard output
-/// or standard error streams of the current process if either of these streams is connected
-/// to the systemd journal.
-///
-/// Systemd explicitly recommends that services check this variable to upgrade their logging
-/// to the native systemd journal protocol.
-///
-/// See section “Environment Variables Set or Propagated by the Service Manager” in
-/// [systemd.exec(5)][1] for more information.
-///
-/// [1]: https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Environment%20Variables%20Set%20or%20Propagated%20by%20the%20Service%20Manager
-pub fn connected_to_journal() -> bool {
-    std::env::var_os("JOURNAL_STREAM")
-        .as_ref()
-        .and_then(|value| value.to_str())
-        .and_then(|value| value.split_once(':'))
-        .and_then(|(device, inode)| {
-            dev_t::from_str(device)
-                .ok()
-                .zip(ino_t::from_str(inode).ok())
-        })
-        .map_or(false, |(device, inode)| {
-            fd_has_device_and_inode(std::io::stderr().as_raw_fd(), device, inode)
-                || fd_has_device_and_inode(std::io::stdout().as_raw_fd(), device, inode)
-        })
-}
 
 /// Initialize journal logging.
 ///

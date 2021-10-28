@@ -18,9 +18,7 @@ edition = "2018"
 # feature unconditionally.  We require std for the set_boxed_logger field in
 # init_with_extra_fields.
 log = { version = "^0.4", features = ["std", "kv_unstable"] }
-libsystemd = "^0.3"
-nix = "^0.21"
-libc = "^0.2"
+libsystemd = "^0.4"
 
 [dev-dependencies]
 pretty_assertions = "^0.7"

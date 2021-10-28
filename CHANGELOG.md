@@ -11,6 +11,12 @@ Run [`cargo-release`][cr] to publish a release.
 
 ## [Unreleased]
 
+### Changed
+- Update to `libsystemd` 0.4.0, and reexport `connected_to_journal()` from that crate.
+
+### Removed
+- Dependencies on `libc` and `nix`.
+
 ## [0.3.1] – 2021-10-06
 
 ### Fixed
